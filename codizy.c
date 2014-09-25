@@ -60,11 +60,11 @@ ZEND_DLEXPORT void (*codizy_zend_execute_internal)(zend_execute_data *execute_da
 zend_function_entry codizy_functions[] = {
 	PHP_FE(codizy_add_pre,	NULL)
 	PHP_FE(codizy_add_post,	NULL)
-#if ZEND_MODULE_API_NO >= 20090626
+	#if ZEND_MODULE_API_NO >= 20090626
 	PHP_FE_END
-#else
+	#else
 	{NULL, NULL, NULL}	/* Must be the last line in codizy_functions[] */
-#endif
+	#endif
 };
 /* }}} */
 
@@ -84,13 +84,14 @@ zend_module_entry codizy_module_entry = {
 };
 /* }}} */
 
+#ifdef COMPILE_DL_CODIZY
+ZEND_GET_MODULE(codizy)
+#endif
+
 PHP_INI_BEGIN()
 	PHP_INI_ENTRY("codizy.web_server_url", "", PHP_INI_ALL, NULL)
 PHP_INI_END()
 
-#ifdef COMPILE_DL_CODIZY
-ZEND_GET_MODULE(codizy)
-#endif
 
 /* {{{ PHP_MINIT_FUNCTION
  */
@@ -185,7 +186,9 @@ PHP_RSHUTDOWN_FUNCTION(codizy)
         efree(f_list);
         f_list=tmp_list;
     }
-
+    FCG(use_callback)=CALLBACK_DISABLE;
+    FCG(codizy_pre_list)=NULL;
+    FCG(codizy_post_list)=NULL;
 	CODIZY_DEBUG("RSHUTDOWN end\n");
 	return SUCCESS;
 }
@@ -250,18 +253,13 @@ static double microtime(TSRMLS_D) {
     return (double)(tp.tv_sec + tp.tv_usec / MICRO_IN_SEC);
 }
 
-static char *get_current_function_name(TSRMLS_D)
+
+static char *get_current_function_name(TSRMLS_D) 
 {
     char *current_function;
-#if ZEND_MODULE_API_NO < 20100525
     char *space;
     char *class_name;
     char *fname;
-#else
-    const char *space;
-    const char *class_name;
-    const char *fname;
-#endif
     class_name=get_active_class_name(&space TSRMLS_CC);
 
     if (strlen(space)==2) {
@@ -272,16 +270,10 @@ static char *get_current_function_name(TSRMLS_D)
         strcat(current_function,"::");
         strcat(current_function,fname);
     } else {
-    	fname = get_active_function_name(TSRMLS_C);
-    	current_function=emalloc(strlen(fname)+1);
-    	memset(current_function,0,strlen(fname)+1);
-    	strcpy(current_function,fname);
+        current_function = get_active_function_name(TSRMLS_C);
     }
     if (!current_function) {
-    	fname = "main";
-		current_function=emalloc(strlen(fname)+1);
-		memset(current_function,0,strlen(fname)+1);
-		strcpy(current_function,fname);
+        current_function="main";
     }
     return current_function;
 }
@@ -338,6 +330,7 @@ static int extract_current_object(zval* object, zval **args[], ulong nextid TSRM
 		return 0;
 	}
 }
+
 
 static int callback_exist(char *func_name TSRMLS_DC) {
     codizy_function_list *pre_list,*post_list;
@@ -519,15 +512,9 @@ ZEND_API void codizy_execute_internal(zend_execute_data *execute_data_ptr, struc
         ptr = EG(current_execute_data);
         ulong nextid = get_current_function_args(args, 0 TSRMLS_CC);
         int in_object = 0;
-#if ZEND_MODULE_API_NO < 20100525
 	    char *space;
 	    char *class_name;
 	    char *fname;
-#else
-	    const char *space;
-	    const char *class_name;
-	    const char *fname;
-#endif
 	    class_name = get_active_class_name(&space TSRMLS_CC);
         fname = get_active_function_name(TSRMLS_C);
 
@@ -593,7 +580,9 @@ ZEND_API void codizy_execute_internal(zend_execute_data *execute_data_ptr, struc
         efree(args);
         FREE_ZVAL(t);
     }
-    efree(current_function);
+    if (strchr(current_function,':')!=NULL) {
+        efree(current_function);
+    }
 	CODIZY_DEBUG("codizy_execute_internal end\n");
 }
 
